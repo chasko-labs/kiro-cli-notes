@@ -54,14 +54,22 @@ basic kiro cli only:
 ```
 
 manual setup:
+
+1. set up the mcp server:
 ```bash
 cd knowledge-base/mcp-server
 npm install && npm run build
 ollama pull nomic-embed-text
+```
 
+2. export content:
+```bash
 cd ../export-pipeline
 npm install && node export-knowledge.js
+```
 
+3. start the search interface:
+```bash
 cd ../static-site
 ./start-server.sh
 ```
