@@ -1,0 +1,70 @@
+steps:
+  setup-node:
+    image: node:18-alpine
+    commands:
+      - npm --version
+
+  setup-ollama:
+    image: ollama/ollama:latest
+    commands:
+      - |
+        echo "setting up ollama"
+        ollama serve &
+        sleep 10
+        ollama pull nomic-embed-text
+
+  install-dependencies:
+    image: node:18-alpine
+    commands:
+      - |
+        cd ~/mcp/knowledge-base-mcp-server
+        npm install
+        npm run build
+        echo "✅ mcp server built"
+      - |
+        cd ../export-pipeline
+        npm install
+        echo "✅ export pipeline ready"
+
+  update-knowledge-base:
+    image: node:18-alpine
+    commands:
+      - cd knowledge-base/export-pipeline
+      - |
+        if node export-knowledge.js; then
+          echo "✅ knowledge base export success"
+          chunk_count=$(jq '.metadata.totalChunks' ../static-site/knowledge.json)
+          echo "chunks: $chunk_count"
+          if [ "$chunk_count" -lt 10 ]; then
+            echo "❌ insufficient chunks: $chunk_count"
+            exit 1
+          fi
+        else
+          echo "❌ knowledge base export failed"
+          exit 1
+        fi
+
+  commit-changes:
+    image: alpine/git:latest
+    commands:
+      - git config --local user.email "action@abstractspacecraft.com"
+      - git config --local user.name "Woodpecker CI"
+      - |
+        if git diff --quiet knowledge-base/static-site/knowledge.json; then
+          echo "no changes detected"
+        else
+          git add knowledge-base/static-site/knowledge.json
+          git add knowledge-base/static-site/knowledge-summary.txt
+          git commit -m "chore: auto-update knowledge base - $(date -u +%Y-%m-%d)"
+          git push origin main
+          echo "✅ changes committed"
+        fi
+
+trigger:
+  event: push
+  paths:
+    - docs/**
+    - video-content/**
+    - steering/**
+    - workflows/**
+  branch: main

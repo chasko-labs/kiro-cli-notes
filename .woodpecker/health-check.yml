@@ -1,0 +1,37 @@
+steps:
+  validate-knowledge-base:
+    image: alpine:latest
+    commands:
+      - apk add jq
+      - |
+        if [ ! -f "knowledge-base/static-site/knowledge.json" ]; then
+          echo "❌ missing knowledge.json"
+          exit 1
+        fi
+      - jq empty knowledge-base/static-site/knowledge.json || (echo "❌ invalid json"; exit 1)
+      - |
+        chunk_count=$(jq '.metadata.totalChunks' knowledge-base/static-site/knowledge.json)
+        echo "chunk count: $chunk_count"
+        if [ "$chunk_count" -lt 40 ]; then
+          echo "⚠️ low chunk count: $chunk_count"
+        fi
+      - |
+        export_date=$(jq -r '.metadata.exportDate' knowledge-base/static-site/knowledge.json)
+        echo "last export: $export_date"
+
+  test-static-site:
+    image: alpine:latest
+    commands:
+      - cd knowledge-base/static-site
+      - |
+        for file in index.html js/app.js js/search.js js/indexeddb.js css/styles.css; do
+          if [ ! -f "$file" ]; then
+            echo "❌ missing file: $file"
+            exit 1
+          fi
+        done
+      - echo "✅ static site files verified"
+
+trigger:
+  event: cron
+  cron: "0 */6 * * *"
