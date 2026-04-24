@@ -1,52 +1,21 @@
+# export-knowledge.json on push to main
+# pages source is branch-served — no build/deploy step needed here
+# ollama is a local dev tool; embedding happens offline, not in CI
+
 when:
-  - event: [push]
+  - event: [push, manual]
     branch: main
 
 steps:
-  checkout:
-    image: alpine/git:latest
-    commands:
-      - git fetch origin main
-      - git checkout main
-
-  setup-node:
-    image: node:18-alpine
-    commands:
-      - npm --version
-
-  setup-ollama:
-    image: ollama/ollama:latest
-    failure: ignore
-    commands:
-      - ollama pull nomic-embed-text
-
-  install-mcp:
-    image: node:18-alpine
-    failure: ignore
-    commands:
-      - mkdir -p ~/mcp
-      - cd ~/mcp
-      - git clone https://github.com/jeanibarz/knowledge-base-mcp-server.git
-      - cd knowledge-base-mcp-server
-      - npm install
-      - npm run build
-
-  install-export-pipeline:
+  - name: install-export-pipeline
     image: node:18-alpine
     commands:
       - cd knowledge-base/export-pipeline
-      - npm install
+      - npm ci
 
-  export-knowledge-base:
+  - name: export-knowledge-base
     image: node:18-alpine
     commands:
       - cd knowledge-base/export-pipeline
       - node export-knowledge.js
-
-  verify-design-system:
-    image: alpine:latest
-    commands:
-      - echo "checking design system files..."
-      - ls -la knowledge-base/static-site/css/
-      - ls -la knowledge-base/static-site/js/
-      - echo "design system files verified"
+      - jq '.metadata.totalChunks' ../static-site/knowledge.json

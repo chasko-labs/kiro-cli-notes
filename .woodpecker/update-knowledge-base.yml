@@ -1,71 +1,45 @@
+# regenerate knowledge.json when source docs change
+# ollama runs at dev time only; export-knowledge.js has no ollama dependency
+
 when:
-  - event: [push]
+  - event: [push, manual]
     branch: main
     path:
-      - docs/**
-      - video-content/**
-      - steering/**
-      - workflows/**
+      include:
+        - docs/**
+        - video-content/**
+        - steering/**
+        - workflows/**
 
 steps:
-  setup-node:
-    image: node:18-alpine
-    commands:
-      - npm --version
-
-  setup-ollama:
-    image: ollama/ollama:latest
-    failure: ignore
-    commands:
-      - |
-        echo "setting up ollama"
-        ollama serve &
-        sleep 10
-        ollama pull nomic-embed-text
-
-  install-dependencies:
-    image: node:18-alpine
-    failure: ignore
-    commands:
-      - |
-        if [ -d knowledge-base/export-pipeline ]; then
-          cd knowledge-base/export-pipeline
-          npm install
-          echo "export pipeline ready"
-        else
-          echo "export-pipeline not found — skipping"
-        fi
-
-  update-knowledge-base:
+  - name: install-dependencies
     image: node:18-alpine
     commands:
       - cd knowledge-base/export-pipeline
-      - |
-        if node export-knowledge.js; then
-          echo "knowledge base export success"
-          chunk_count=$(jq '.metadata.totalChunks' ../static-site/knowledge.json)
-          echo "chunks: $chunk_count"
-          if [ "$chunk_count" -lt 10 ]; then
-            echo "insufficient chunks: $chunk_count"
-            exit 1
-          fi
-        else
-          echo "knowledge base export failed"
-          exit 1
-        fi
+      - npm ci
 
-  commit-changes:
+  - name: update-knowledge-base
+    image: node:18-alpine
+    commands:
+      - cd knowledge-base/export-pipeline
+      - node export-knowledge.js
+      - chunk_count=$(jq '.metadata.totalChunks' ../static-site/knowledge.json)
+      - echo "chunks $chunk_count"
+      - "[ \"$chunk_count\" -ge 10 ] || { echo \"insufficient chunks: $chunk_count\"; exit 1; }"
+
+  - name: commit-changes
     image: alpine/git:latest
+    environment:
+      GIT_PUSH_TOKEN:
+        from_secret: git_push_token
     commands:
       - git config --local user.email "action@abstractspacecraft.com"
       - git config --local user.name "Woodpecker CI"
       - |
         if git diff --quiet knowledge-base/static-site/knowledge.json; then
-          echo "no changes detected"
+          echo "no changes"
         else
-          git add knowledge-base/static-site/knowledge.json
-          git add knowledge-base/static-site/knowledge-summary.txt
-          git commit -m "chore: auto-update knowledge base - $(date -u +%Y-%m-%d)"
-          git push origin main
-          echo "changes committed"
+          git add knowledge-base/static-site/knowledge.json knowledge-base/static-site/knowledge-summary.txt
+          git commit -m "chore: auto-update knowledge base $(date -u +%Y-%m-%d)"
+          git push "https://x-token:${GIT_PUSH_TOKEN}@github.com/chasko-labs/kiro-cli-notes.git" main
         fi
