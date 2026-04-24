@@ -1,37 +1,32 @@
-steps:
-  validate-knowledge-base:
-    image: alpine:latest
-    commands:
-      - apk add jq
-      - |
-        if [ ! -f "knowledge-base/static-site/knowledge.json" ]; then
-          echo "❌ missing knowledge.json"
-          exit 1
-        fi
-      - jq empty knowledge-base/static-site/knowledge.json || (echo "❌ invalid json"; exit 1)
-      - |
-        chunk_count=$(jq '.metadata.totalChunks' knowledge-base/static-site/knowledge.json)
-        echo "chunk count: $chunk_count"
-        if [ "$chunk_count" -lt 40 ]; then
-          echo "⚠️ low chunk count: $chunk_count"
-        fi
-      - |
-        export_date=$(jq -r '.metadata.exportDate' knowledge-base/static-site/knowledge.json)
-        echo "last export: $export_date"
+# periodic health check — validate knowledge.json + static site assets
+# runs every 6h via cron; also available via manual trigger
 
-  test-static-site:
-    image: alpine:latest
+when:
+  - event: [cron, manual]
+    cron: "0 */6 * * *"
+
+steps:
+  - name: validate-knowledge-base
+    image: alpine:3.21
+    when:
+      - event: [cron, manual]
+    commands:
+      - apk add --no-cache jq >/dev/null
+      - "[ -f knowledge-base/static-site/knowledge.json ] || { echo 'missing knowledge.json'; exit 1; }"
+      - jq empty knowledge-base/static-site/knowledge.json || { echo 'invalid json'; exit 1; }
+      - chunk_count=$(jq '.metadata.totalChunks' knowledge-base/static-site/knowledge.json)
+      - echo "chunks $chunk_count"
+      - export_date=$(jq -r '.metadata.exportDate' knowledge-base/static-site/knowledge.json)
+      - echo "export $export_date"
+
+  - name: test-static-site
+    image: alpine:3.21
+    when:
+      - event: [cron, manual]
     commands:
       - cd knowledge-base/static-site
       - |
         for file in index.html js/app.js js/search.js js/indexeddb.js css/styles.css; do
-          if [ ! -f "$file" ]; then
-            echo "❌ missing file: $file"
-            exit 1
-          fi
+          [ -f "$file" ] || { echo "missing $file"; exit 1; }
         done
-      - echo "✅ static site files verified"
-
-trigger:
-  event: cron
-  cron: "0 */6 * * *"
+      - echo "static site files ok"
