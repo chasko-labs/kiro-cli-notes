@@ -1,3 +1,7 @@
+when:
+  - event: [push]
+    branch: main
+
 steps:
   checkout:
     image: alpine/git:latest
@@ -12,11 +16,13 @@ steps:
 
   setup-ollama:
     image: ollama/ollama:latest
+    failure: ignore
     commands:
       - ollama pull nomic-embed-text
 
   install-mcp:
     image: node:18-alpine
+    failure: ignore
     commands:
       - mkdir -p ~/mcp
       - cd ~/mcp
@@ -43,8 +49,4 @@ steps:
       - echo "checking design system files..."
       - ls -la knowledge-base/static-site/css/
       - ls -la knowledge-base/static-site/js/
-      - echo "✅ design system files verified"
-
-trigger:
-  event: push
-  branch: main
+      - echo "design system files verified"
