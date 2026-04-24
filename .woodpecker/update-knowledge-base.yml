@@ -1,3 +1,12 @@
+when:
+  - event: [push]
+    branch: main
+    path:
+      - docs/**
+      - video-content/**
+      - steering/**
+      - workflows/**
+
 steps:
   setup-node:
     image: node:18-alpine
@@ -6,6 +15,7 @@ steps:
 
   setup-ollama:
     image: ollama/ollama:latest
+    failure: ignore
     commands:
       - |
         echo "setting up ollama"
@@ -15,16 +25,16 @@ steps:
 
   install-dependencies:
     image: node:18-alpine
+    failure: ignore
     commands:
       - |
-        cd ~/mcp/knowledge-base-mcp-server
-        npm install
-        npm run build
-        echo "✅ mcp server built"
-      - |
-        cd ../export-pipeline
-        npm install
-        echo "✅ export pipeline ready"
+        if [ -d knowledge-base/export-pipeline ]; then
+          cd knowledge-base/export-pipeline
+          npm install
+          echo "export pipeline ready"
+        else
+          echo "export-pipeline not found — skipping"
+        fi
 
   update-knowledge-base:
     image: node:18-alpine
@@ -32,15 +42,15 @@ steps:
       - cd knowledge-base/export-pipeline
       - |
         if node export-knowledge.js; then
-          echo "✅ knowledge base export success"
+          echo "knowledge base export success"
           chunk_count=$(jq '.metadata.totalChunks' ../static-site/knowledge.json)
           echo "chunks: $chunk_count"
           if [ "$chunk_count" -lt 10 ]; then
-            echo "❌ insufficient chunks: $chunk_count"
+            echo "insufficient chunks: $chunk_count"
             exit 1
           fi
         else
-          echo "❌ knowledge base export failed"
+          echo "knowledge base export failed"
           exit 1
         fi
 
@@ -57,14 +67,5 @@ steps:
           git add knowledge-base/static-site/knowledge-summary.txt
           git commit -m "chore: auto-update knowledge base - $(date -u +%Y-%m-%d)"
           git push origin main
-          echo "✅ changes committed"
+          echo "changes committed"
         fi
-
-trigger:
-  event: push
-  paths:
-    - docs/**
-    - video-content/**
-    - steering/**
-    - workflows/**
-  branch: main
