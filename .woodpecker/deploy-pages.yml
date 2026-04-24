@@ -1,21 +1,28 @@
-# export-knowledge.json on push to main
-# pages source is branch-served — no build/deploy step needed here
-# ollama is a local dev tool; embedding happens offline, not in CI
+# validate committed knowledge.json on push to main
+# pages source is branch-served — no build/deploy step
+# export-knowledge.js starts an MCP server + ollama — local dev only, not CI
 
 when:
-  - event: [push, manual]
+  - event: [push, pull_request, manual]
     branch: main
+    path:
+      include:
+        - "**/*.md"
+        - knowledge-base/static-site/**
+        - .woodpecker/**
 
 steps:
-  - name: install-export-pipeline
-    image: node:18-alpine
+  - name: validate-knowledge-json
+    image: alpine:3.21
     commands:
-      - cd knowledge-base/export-pipeline
-      - npm ci
+      - apk add --no-cache jq >/dev/null
+      - "[ -f knowledge-base/static-site/knowledge.json ] || { echo 'missing knowledge.json'; exit 1; }"
+      - jq empty knowledge-base/static-site/knowledge.json || { echo 'invalid json'; exit 1; }
+      - chunk_count=$(jq '.metadata.totalChunks' knowledge-base/static-site/knowledge.json)
+      - echo "chunks $chunk_count"
+      - "[ \"$chunk_count\" -ge 10 ] || { echo \"chunk count too low: $chunk_count\"; exit 1; }"
 
-  - name: export-knowledge-base
-    image: node:18-alpine
+  - name: markdown-lint
+    image: davidanson/markdownlint-cli2:v0.14.0
     commands:
-      - cd knowledge-base/export-pipeline
-      - node export-knowledge.js
-      - jq '.metadata.totalChunks' ../static-site/knowledge.json
+      - markdownlint-cli2 "**/*.md" "#node_modules"

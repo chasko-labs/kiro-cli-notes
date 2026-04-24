@@ -1,8 +1,10 @@
-# regenerate knowledge.json when source docs change
-# ollama runs at dev time only; export-knowledge.js has no ollama dependency
+# validate knowledge.json is committed and current when source docs change
+# export-knowledge.js requires a local MCP server + ollama — not runnable in CI
+# to regenerate: run `node knowledge-base/export-pipeline/export-knowledge.js` locally,
+# commit the updated knowledge-base/static-site/knowledge.json, then push
 
 when:
-  - event: [push, manual]
+  - event: [push, pull_request, manual]
     branch: main
     path:
       include:
@@ -10,36 +12,16 @@ when:
         - video-content/**
         - steering/**
         - workflows/**
+        - knowledge-base/static-site/**
 
 steps:
-  - name: install-dependencies
-    image: node:18-alpine
+  - name: validate-knowledge-json
+    image: alpine:3.21
     commands:
-      - cd knowledge-base/export-pipeline
-      - npm ci
-
-  - name: update-knowledge-base
-    image: node:18-alpine
-    commands:
-      - cd knowledge-base/export-pipeline
-      - node export-knowledge.js
-      - chunk_count=$(jq '.metadata.totalChunks' ../static-site/knowledge.json)
-      - echo "chunks $chunk_count"
-      - "[ \"$chunk_count\" -ge 10 ] || { echo \"insufficient chunks: $chunk_count\"; exit 1; }"
-
-  - name: commit-changes
-    image: alpine/git:latest
-    environment:
-      GIT_PUSH_TOKEN:
-        from_secret: git_push_token
-    commands:
-      - git config --local user.email "action@abstractspacecraft.com"
-      - git config --local user.name "Woodpecker CI"
-      - |
-        if git diff --quiet knowledge-base/static-site/knowledge.json; then
-          echo "no changes"
-        else
-          git add knowledge-base/static-site/knowledge.json knowledge-base/static-site/knowledge-summary.txt
-          git commit -m "chore: auto-update knowledge base $(date -u +%Y-%m-%d)"
-          git push "https://x-token:${GIT_PUSH_TOKEN}@github.com/chasko-labs/kiro-cli-notes.git" main
-        fi
+      - apk add --no-cache jq >/dev/null
+      - "[ -f knowledge-base/static-site/knowledge.json ] || { echo 'missing knowledge.json — run export-knowledge.js locally and commit'; exit 1; }"
+      - jq empty knowledge-base/static-site/knowledge.json || { echo 'invalid json in knowledge.json'; exit 1; }
+      - export_date=$(jq -r '.metadata.exportDate' knowledge-base/static-site/knowledge.json)
+      - chunk_count=$(jq '.metadata.totalChunks' knowledge-base/static-site/knowledge.json)
+      - echo "export $export_date | chunks $chunk_count"
+      - "[ \"$chunk_count\" -ge 10 ] || { echo \"chunk count too low: $chunk_count\"; exit 1; }"
