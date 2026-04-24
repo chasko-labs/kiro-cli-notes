@@ -1,0 +1,50 @@
+steps:
+  checkout:
+    image: alpine/git:latest
+    commands:
+      - git fetch origin main
+      - git checkout main
+
+  setup-node:
+    image: node:18-alpine
+    commands:
+      - npm --version
+
+  setup-ollama:
+    image: ollama/ollama:latest
+    commands:
+      - ollama pull nomic-embed-text
+
+  install-mcp:
+    image: node:18-alpine
+    commands:
+      - mkdir -p ~/mcp
+      - cd ~/mcp
+      - git clone https://github.com/jeanibarz/knowledge-base-mcp-server.git
+      - cd knowledge-base-mcp-server
+      - npm install
+      - npm run build
+
+  install-export-pipeline:
+    image: node:18-alpine
+    commands:
+      - cd knowledge-base/export-pipeline
+      - npm install
+
+  export-knowledge-base:
+    image: node:18-alpine
+    commands:
+      - cd knowledge-base/export-pipeline
+      - node export-knowledge.js
+
+  verify-design-system:
+    image: alpine:latest
+    commands:
+      - echo "checking design system files..."
+      - ls -la knowledge-base/static-site/css/
+      - ls -la knowledge-base/static-site/js/
+      - echo "✅ design system files verified"
+
+trigger:
+  event: push
+  branch: main
